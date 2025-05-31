@@ -201,7 +201,7 @@ end
 
 -- ESP UI
 Tab:CreateToggle({
-   Name = "ESP",
+   Name = "Chams",
    CurrentValue = false,
    Flag = "ToggleESP",
    Callback = function(Value)
@@ -211,7 +211,7 @@ Tab:CreateToggle({
 })
 
 Tab:CreateColorPicker({
-    Name = "ESP Color",
+    Name = "Chams Color",
     Color = Color3.fromRGB(255, 0, 0),
     Flag = "ESPColorPicker",
     Callback = function(Value)
