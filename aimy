@@ -5,8 +5,8 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
    Name = "Aimy",
    Icon = 0,
-   LoadingTitle = "Loading Aimy",
-   LoadingSubtitle = "Made By ccgvb",
+   LoadingTitle = "Rayfield Interface Suite",
+   LoadingSubtitle = "by Sirius",
    Theme = "Darkblue",
    ToggleUIKeybind = "G",
    DisableRayfieldPrompts = false,
@@ -154,7 +154,7 @@ end)
 RunService.RenderStepped:Connect(function()
     if toggleOn then
         local mousePos = UserInputService:GetMouseLocation()
-        fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y - 35)
     end
 end)
 
@@ -201,7 +201,7 @@ end
 
 -- ESP UI
 Tab:CreateToggle({
-   Name = "Chams",
+   Name = "ESP",
    CurrentValue = false,
    Flag = "ToggleESP",
    Callback = function(Value)
@@ -211,7 +211,7 @@ Tab:CreateToggle({
 })
 
 Tab:CreateColorPicker({
-    Name = "Chams Color",
+    Name = "ESP Color",
     Color = Color3.fromRGB(255, 0, 0),
     Flag = "ESPColorPicker",
     Callback = function(Value)
