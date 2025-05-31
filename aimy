@@ -1,453 +1,90 @@
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- Updated Aimbot + ESP script with FOV persistence after reset
 
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "Aimy",
-   Icon = 0, -- Icon in Topbar. Can use Lucide Icons (string) or Roblox Image (number). 0 to use no icon (default).
-   LoadingTitle = "Rayfield Interface Suite",
-   LoadingSubtitle = "by Sirius",
-   Theme = "Darkblue", -- Check https://docs.sirius.menu/rayfield/configuration/themes
-
-   ToggleUIKeybind = "G", -- The keybind to toggle the UI visibility (string like "K" or Enum.KeyCode)
-
+   Icon = 0,
+   LoadingTitle = "Loading Aimy",
+   LoadingSubtitle = "Made By ccgvb",
+   Theme = "Darkblue",
+   ToggleUIKeybind = "G",
    DisableRayfieldPrompts = false,
-   DisableBuildWarnings = false, -- Prevents Rayfield from warning when the script has a version mismatch with the interface
-
+   DisableBuildWarnings = false,
    ConfigurationSaving = {
       Enabled = true,
-      FolderName = nil, -- Create a custom folder for your hub/game
+      FolderName = nil,
       FileName = "Big Hub"
    },
-
    Discord = {
-      Enabled = false, -- Prompt the user to join your Discord server if their executor supports it
-      Invite = "noinvitelink", -- The Discord invite code, do not include discord.gg/. E.g. discord.gg/ ABCD would be ABCD
-      RememberJoins = true -- Set this to false to make them join the discord every time they load it up
+      Enabled = false,
+      Invite = "noinvitelink",
+      RememberJoins = true
    },
-
-   KeySystem = false, -- Set this to true to use our key system
+   KeySystem = false,
    KeySettings = {
       Title = "Untitled",
       Subtitle = "Key System",
-      Note = "No method of obtaining the key is provided", -- Use this to tell the user how to get a key
-      FileName = "Key", -- It is recommended to use something unique as other scripts using Rayfield may overwrite your key file
-      SaveKey = true, -- The user's key will be saved, but if you change the key, they will be unable to use your script
-      GrabKeyFromSite = false, -- If this is true, set Key below to the RAW site you would like Rayfield to get the key from
-      Key = {"Hello"} -- List of keys that will be accepted by the system, can be RAW file links (pastebin, github etc) or simple strings ("hello","key22")
+      Note = "No method of obtaining the key is provided",
+      FileName = "Key",
+      SaveKey = true,
+      GrabKeyFromSite = false,
+      Key = {"Hello"}
    }
 })
 
-
-local Tab = Window:CreateTab("Aimbot", "target") -- Title, Image
-
-
+local Tab = Window:CreateTab("Aimbot", "target")
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local toggleOn = false
 local aiming = false
-local fovRadius = 50 -- default FOV radius
+local fovRadius = 50
 
--- Create the FOV circle UI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimbotFOVGui"
-screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
-
-local fovCircle = Instance.new("Frame")
-fovCircle.Name = "FOVCircle"
-fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-fovCircle.BackgroundColor3 = Color3.new(1, 1, 1) -- white but fully transparent fill
-fovCircle.BackgroundTransparency = 1
-fovCircle.BorderSizePixel = 0
-fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
-fovCircle.Position = UDim2.new(0, 0, 0, 0)
-fovCircle.Visible = false
-fovCircle.Parent = screenGui
-
--- Add UIStroke for the circle outline
-local stroke = Instance.new("UIStroke")
-stroke.Thickness = 2
-stroke.Color = Color3.new(1, 1, 1)
-stroke.Parent = fovCircle
-
--- Make it perfectly round with UICorner
-local uicorner = Instance.new("UICorner")
-uicorner.CornerRadius = UDim.new(1, 0)
-uicorner.Parent = fovCircle
-
-
--- Get the closest player's head within FOV
-local function getClosestTarget()
-	local closestDist = math.huge
-	local closestChar = nil
-
-	local mousePos = UserInputService:GetMouseLocation()
--- Adjust Y for Roblox top bar (~36 pixels)
-local adjustedPos = Vector2.new(mousePos.X, mousePos.Y - 36)
-fovCircle.Position = UDim2.new(0, adjustedPos.X, 0, adjustedPos.Y)
-
-
-	for _, plr in pairs(Players:GetPlayers()) do
-		if plr ~= localPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-			local head = plr.Character.Head
-			local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
-
-			if onScreen then
-				local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
-
-				if dist < closestDist and dist <= fovRadius then
-					closestDist = dist
-					closestChar = plr.Character
-				end
-			end
-		end
-	end
-
-	return closestChar
-end
-
--- Toggle creation
-local Toggle = Tab:CreateToggle({
-   Name = "Aimbot",
-   CurrentValue = false,
-   Flag = "Toggle1",
-   Callback = function(Value)
-      toggleOn = Value
-      aiming = false -- reset aiming when toggled off
-      fovCircle.Visible = Value -- show/hide the FOV circle
-   end,
-})
-
--- FOV Slider creation
-local Slider = Tab:CreateSlider({
-   Name = "Aimbot FOV",
-   Range = {10, 300},
-   Increment = 10,
-   Suffix = "px",
-   CurrentValue = fovRadius,
-   Flag = "Slider1",
-   Callback = function(Value)
-      fovRadius = Value
-      fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
-   end,
-})
-
--- Right click detection (only works if toggle is ON)
-UserInputService.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 and toggleOn then
-		aiming = true
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		aiming = false
-	end
-end)
-
--- Update FOV circle position to follow mouse
-RunService.RenderStepped:Connect(function()
-	if toggleOn then
-		local mousePos = UserInputService:GetMouseLocation()
-		fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
-	end
-end)
-
--- Main loop with camera lock-on
-RunService.RenderStepped:Connect(function()
-	if aiming then
-		local target = getClosestTarget()
-		if target and target:FindFirstChild("Head") then
-			local headPos = target.Head.Position
-			local direction = (headPos - camera.CFrame.Position).Unit
-			camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + direction)
-		end
-	end
-end)
-
-
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
-
-local Window = Rayfield:CreateWindow({
-   Name = "Aimy",
-   Icon = 0, -- Icon in Topbar. Can use Lucide Icons (string) or Roblox Image (number). 0 to use no icon (default).
-   LoadingTitle = "Rayfield Interface Suite",
-   LoadingSubtitle = "by Sirius",
-   Theme = "Darkblue", -- Check https://docs.sirius.menu/rayfield/configuration/themes
-
-   ToggleUIKeybind = "G", -- The keybind to toggle the UI visibility (string like "K" or Enum.KeyCode)
-
-   DisableRayfieldPrompts = false,
-   DisableBuildWarnings = false, -- Prevents Rayfield from warning when the script has a version mismatch with the interface
-
-   ConfigurationSaving = {
-      Enabled = true,
-      FolderName = nil, -- Create a custom folder for your hub/game
-      FileName = "Big Hub"
-   },
-
-   Discord = {
-      Enabled = false, -- Prompt the user to join your Discord server if their executor supports it
-      Invite = "noinvitelink", -- The Discord invite code, do not include discord.gg/. E.g. discord.gg/ ABCD would be ABCD
-      RememberJoins = true -- Set this to false to make them join the discord every time they load it up
-   },
-
-   KeySystem = false, -- Set this to true to use our key system
-   KeySettings = {
-      Title = "Untitled",
-      Subtitle = "Key System",
-      Note = "No method of obtaining the key is provided", -- Use this to tell the user how to get a key
-      FileName = "Key", -- It is recommended to use something unique as other scripts using Rayfield may overwrite your key file
-      SaveKey = true, -- The user's key will be saved, but if you change the key, they will be unable to use your script
-      GrabKeyFromSite = false, -- If this is true, set Key below to the RAW site you would like Rayfield to get the key from
-      Key = {"Hello"} -- List of keys that will be accepted by the system, can be RAW file links (pastebin, github etc) or simple strings ("hello","key22")
-   }
-})
-
-
-local Tab = Window:CreateTab("Aimbot", "target") -- Title, Image
-
-
-
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
-
-local localPlayer = Players.LocalPlayer
-local camera = workspace.CurrentCamera
-
-local toggleOn = false
-local aiming = false
-local fovRadius = 50 -- default FOV radius
-
--- Create the FOV circle UI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimbotFOVGui"
-screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
-
-local fovCircle = Instance.new("Frame")
-fovCircle.Name = "FOVCircle"
-fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-fovCircle.BackgroundColor3 = Color3.new(1, 1, 1) -- white but fully transparent fill
-fovCircle.BackgroundTransparency = 1
-fovCircle.BorderSizePixel = 0
-fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
-fovCircle.Position = UDim2.new(0, 0, 0, 0)
-fovCircle.Visible = false
-fovCircle.Parent = screenGui
-
--- Add UIStroke for the circle outline
-local stroke = Instance.new("UIStroke")
-stroke.Thickness = 2
-stroke.Color = Color3.new(1, 1, 1)
-stroke.Parent = fovCircle
-
--- Make it perfectly round with UICorner
-local uicorner = Instance.new("UICorner")
-uicorner.CornerRadius = UDim.new(1, 0)
-uicorner.Parent = fovCircle
-
-
--- Get the closest player's head within FOV
-local function getClosestTarget()
-	local closestDist = math.huge
-	local closestChar = nil
-
-	local mousePos = UserInputService:GetMouseLocation()
--- Adjust Y for Roblox top bar (~36 pixels)
-local adjustedPos = Vector2.new(mousePos.X, mousePos.Y - 36)
-fovCircle.Position = UDim2.new(0, adjustedPos.X, 0, adjustedPos.Y)
-
-
-	for _, plr in pairs(Players:GetPlayers()) do
-		if plr ~= localPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-			local head = plr.Character.Head
-			local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
-
-			if onScreen then
-				local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
-
-				if dist < closestDist and dist <= fovRadius then
-					closestDist = dist
-					closestChar = plr.Character
-				end
-			end
-		end
-	end
-
-	return closestChar
-end
-
--- Toggle creation
-local Toggle = Tab:CreateToggle({
-   Name = "Aimbot",
-   CurrentValue = false,
-   Flag = "Toggle1",
-   Callback = function(Value)
-      toggleOn = Value
-      aiming = false -- reset aiming when toggled off
-      fovCircle.Visible = Value -- show/hide the FOV circle
-   end,
-})
-
--- FOV Slider creation
-local Slider = Tab:CreateSlider({
-   Name = "Aimbot FOV",
-   Range = {10, 300},
-   Increment = 10,
-   Suffix = "px",
-   CurrentValue = fovRadius,
-   Flag = "Slider1",
-   Callback = function(Value)
-      fovRadius = Value
-      fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
-   end,
-})
-
--- Right click detection (only works if toggle is ON)
-UserInputService.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 and toggleOn then
-		aiming = true
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		aiming = false
-	end
-end)
-
--- Update FOV circle position to follow mouse
-RunService.RenderStepped:Connect(function()
-	if toggleOn then
-		local mousePos = UserInputService:GetMouseLocation()
-		fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
-	end
-end)
-
--- Main loop with camera lock-on
-RunService.RenderStepped:Connect(function()
-	if aiming then
-		local target = getClosestTarget()
-		if target and target:FindFirstChild("Head") then
-			local headPos = target.Head.Position
-			local direction = (headPos - camera.CFrame.Position).Unit
-			camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + direction)
-		end
-	end
-end)
-
-local Players = game:GetService("Players")
-local localPlayer = Players.LocalPlayer
-
-local ESPEnabled = false
-local ESPColor = Color3.new(1, 0, 0) -- Default red color
-local Highlights = {} -- Store highlights to manage toggling
-
--- Function to add/remove highlight effect
-local function updateESP()
-    if ESPEnabled then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= localPlayer and player.Character then
-                if not Highlights[player] then
-                    local highlight = Instance.new("Highlight")
-                    highlight.Parent = player.Character
-                    highlight.FillColor = ESPColor
-                    Highlights[player] = highlight
-                else
-                    Highlights[player].FillColor = ESPColor
-                end
-            elseif Highlights[player] then
-                Highlights[player]:Destroy()
-                Highlights[player] = nil
-            end
-        end
-    else
-        -- Remove all highlights
-        for _, highlight in pairs(Highlights) do
-            if highlight then
-                highlight:Destroy()
-            end
-        end
-        Highlights = {}
-    end
-end
-
--- Monitor new players joining and their characters spawning
-Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function(character)
-        if ESPEnabled and player ~= localPlayer then
-            if not Highlights[player] then
-                local highlight = Instance.new("Highlight")
-                highlight.Parent = character
-                highlight.FillColor = ESPColor
-                Highlights[player] = highlight
-            end
-        end
-    end)
-end)
-
--- Also monitor existing players' character respawns
-for _, player in ipairs(Players:GetPlayers()) do
-    player.CharacterAdded:Connect(function(character)
-        if ESPEnabled and player ~= localPlayer then
-            if not Highlights[player] then
-                local highlight = Instance.new("Highlight")
-                highlight.Parent = character
-                highlight.FillColor = ESPColor
-                Highlights[player] = highlight
-            end
-        end
-    end)
-end
-
--- Toggle Button
-local Toggle = Tab:CreateToggle({
-   Name = "ESP",
-   CurrentValue = false,
-   Flag = "ToggleESP",
-   Callback = function(Value)
-       ESPEnabled = Value
-       updateESP()
-   end,
-})
-
--- Color Picker
-local ColorPicker = Tab:CreateColorPicker({
-    Name = "ESP Color",
-    Color = Color3.fromRGB(255, 0, 0),
-    Flag = "ESPColorPicker",
-    Callback = function(Value)
-        ESPColor = Value
-        updateESP()
-    end
-})
-
--- Initialize ESP for existing players if enabled
-updateESP()
-
-
--- Team Check Toggle
 local teamCheckEnabled = false
+local ESPEnabled = false
+local ESPColor = Color3.new(1, 0, 0)
+local Highlights = {}
 
-local TeamCheckToggle = Tab:CreateToggle({
-    Name = "Team Check",
-    CurrentValue = false,
-    Flag = "TeamCheckToggle",
-    Callback = function(value)
-        teamCheckEnabled = value
-    end,
-})
+-- Create or get persistent ScreenGui for FOV
+local screenGui = localPlayer:WaitForChild("PlayerGui"):FindFirstChild("AimbotFOVGui")
+if not screenGui then
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AimbotFOVGui"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+end
 
--- Modify getClosestTarget() to respect team check
+-- Create or reuse FOV circle
+local fovCircle = screenGui:FindFirstChild("FOVCircle")
+if not fovCircle then
+    fovCircle = Instance.new("Frame")
+    fovCircle.Name = "FOVCircle"
+    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    fovCircle.BackgroundColor3 = Color3.new(1, 1, 1)
+    fovCircle.BackgroundTransparency = 1
+    fovCircle.BorderSizePixel = 0
+    fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
+    fovCircle.Position = UDim2.new(0, 0, 0, 0)
+    fovCircle.Visible = false
+    fovCircle.Parent = screenGui
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 2
+    stroke.Color = Color3.new(1, 1, 1)
+    stroke.Parent = fovCircle
+
+    local uicorner = Instance.new("UICorner")
+    uicorner.CornerRadius = UDim.new(1, 0)
+    uicorner.Parent = fovCircle
+end
+
+-- Aimbot Functions
 local function getClosestTarget()
     local closestDist = math.huge
     local closestChar = nil
@@ -477,7 +114,62 @@ local function getClosestTarget()
     return closestChar
 end
 
--- Update ESP update function to respect team check:
+-- UI Callbacks
+Tab:CreateToggle({
+   Name = "Aimbot",
+   CurrentValue = false,
+   Flag = "Toggle1",
+   Callback = function(Value)
+      toggleOn = Value
+      aiming = false
+      fovCircle.Visible = Value
+   end,
+})
+
+Tab:CreateSlider({
+   Name = "Aimbot FOV",
+   Range = {10, 300},
+   Increment = 10,
+   Suffix = "px",
+   CurrentValue = fovRadius,
+   Flag = "Slider1",
+   Callback = function(Value)
+      fovRadius = Value
+      fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
+   end,
+})
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 and toggleOn then
+        aiming = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aiming = false
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if toggleOn then
+        local mousePos = UserInputService:GetMouseLocation()
+        fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if aiming then
+        local target = getClosestTarget()
+        if target and target:FindFirstChild("Head") then
+            local headPos = target.Head.Position
+            local direction = (headPos - camera.CFrame.Position).Unit
+            camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + direction)
+        end
+    end
+end)
+
+-- ESP Functions
 local function updateESP()
     if ESPEnabled then
         for _, player in ipairs(Players:GetPlayers()) do
@@ -495,19 +187,68 @@ local function updateESP()
                     Highlights[player]:Destroy()
                     Highlights[player] = nil
                 end
-            elseif Highlights[player] then
-                Highlights[player]:Destroy()
-                Highlights[player] = nil
             end
         end
     else
-        -- Remove all highlights
         for _, highlight in pairs(Highlights) do
-            highlight:Destroy()
+            if highlight then
+                highlight:Destroy()
+            end
         end
         Highlights = {}
     end
 end
 
--- Make sure updateESP() runs regularly
-RunService.RenderStepped:Connect(updateESP)
+-- ESP UI
+Tab:CreateToggle({
+   Name = "ESP",
+   CurrentValue = false,
+   Flag = "ToggleESP",
+   Callback = function(Value)
+       ESPEnabled = Value
+       updateESP()
+   end,
+})
+
+Tab:CreateColorPicker({
+    Name = "ESP Color",
+    Color = Color3.fromRGB(255, 0, 0),
+    Flag = "ESPColorPicker",
+    Callback = function(Value)
+        ESPColor = Value
+        updateESP()
+    end
+})
+
+Tab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = false,
+    Flag = "TeamCheckToggle",
+    Callback = function(value)
+        teamCheckEnabled = value
+        updateESP()
+    end,
+})
+
+-- ESP on player joins
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        if ESPEnabled and player ~= localPlayer and (not teamCheckEnabled or player.Team ~= localPlayer.Team) then
+            local highlight = Instance.new("Highlight")
+            highlight.Parent = character
+            highlight.FillColor = ESPColor
+            Highlights[player] = highlight
+        end
+    end)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    player.CharacterAdded:Connect(function(character)
+        if ESPEnabled and player ~= localPlayer and (not teamCheckEnabled or player.Team ~= localPlayer.Team) then
+            local highlight = Instance.new("Highlight")
+            highlight.Parent = character
+            highlight.FillColor = ESPColor
+            Highlights[player] = highlight
+        end
+    end)
+end
