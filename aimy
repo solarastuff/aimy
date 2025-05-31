@@ -1,4 +1,8 @@
--- Updated Aimbot + ESP script with FOV persistence after reset
+-- Aimy Aimbot + ESP Script
+-- Both FOV circles can be toggled visible/hidden at any time in UI (even after reset).
+-- Classic FOV is always visible when aimbot is enabled and FOV toggle is ON.
+-- Legit FOV is always visible when legit aimbot is enabled and FOV toggle is ON.
+-- FOV logic always functions even when FOV circles are hidden.
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -35,6 +39,8 @@ local Window = Rayfield:CreateWindow({
 
 local Tab = Window:CreateTab("Aimbot", "target")
 
+local Section = Tab:CreateSection("Blatant")
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -42,67 +48,106 @@ local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+-- ===== AIMBOT VARIABLES =====
 local toggleOn = false
 local aiming = false
 local fovRadius = 50
-
 local teamCheckEnabled = false
+local fovCircleVisible = true -- UI toggle for aimbot FOV circle
+
+-- ===== Legit Aimbot mode variables =====
+local legitAimbotEnabled = false
+local aimDelay = 0
+local aimSmoothness = 0.18
+local legitFovRadius = 50
+local legitFovCircleVisible = true -- UI toggle for legit FOV circle
+
+-- ===== CHAMS VARIABLES =====
 local ESPEnabled = false
 local ESPColor = Color3.new(1, 0, 0)
 local Highlights = {}
 
--- Create or get persistent ScreenGui for FOV
-local screenGui = localPlayer:WaitForChild("PlayerGui"):FindFirstChild("AimbotFOVGui")
-if not screenGui then
-    screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "AimbotFOVGui"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+-- ===== BOX ESP / TRACERS VARIABLES =====
+local BoxESPEnabled = false
+local TracersEnabled = false
+
+-- ====== FOV CIRCLES (with reset persistence) ======
+local function getOrCreateFOVGui(name)
+    local gui = localPlayer:WaitForChild("PlayerGui"):FindFirstChild(name)
+    if not gui then
+        gui = Instance.new("ScreenGui")
+        gui.Name = name
+        gui.ResetOnSpawn = false
+        gui.Parent = localPlayer:WaitForChild("PlayerGui")
+    end
+    return gui
 end
 
--- Create or reuse FOV circle
-local fovCircle = screenGui:FindFirstChild("FOVCircle")
-if not fovCircle then
-    fovCircle = Instance.new("Frame")
-    fovCircle.Name = "FOVCircle"
-    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovCircle.BackgroundColor3 = Color3.new(1, 1, 1)
-    fovCircle.BackgroundTransparency = 1
-    fovCircle.BorderSizePixel = 0
-    fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
-    fovCircle.Position = UDim2.new(0, 0, 0, 0)
-    fovCircle.Visible = false
-    fovCircle.Parent = screenGui
+local function getOrCreateCircle(parentGui, circleName, radius)
+    local circle = parentGui:FindFirstChild(circleName)
+    if not circle then
+        circle = Instance.new("Frame")
+        circle.Name = circleName
+        circle.AnchorPoint = Vector2.new(0.5, 0.5)
+        circle.BackgroundColor3 = Color3.new(1, 1, 1)
+        circle.BackgroundTransparency = 1
+        circle.BorderSizePixel = 0
+        circle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
+        circle.Position = UDim2.new(0, 0, 0, 0)
+        circle.Visible = false
+        circle.Parent = parentGui
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 2
-    stroke.Color = Color3.new(1, 1, 1)
-    stroke.Parent = fovCircle
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 2
+        stroke.Color = Color3.new(1, 1, 1)
+        stroke.Parent = circle
 
-    local uicorner = Instance.new("UICorner")
-    uicorner.CornerRadius = UDim.new(1, 0)
-    uicorner.Parent = fovCircle
+        local uicorner = Instance.new("UICorner")
+        uicorner.CornerRadius = UDim.new(1, 0)
+        uicorner.Parent = circle
+    end
+    return circle
 end
 
--- Aimbot Functions
-local function getClosestTarget()
+local fovScreenGui = getOrCreateFOVGui("AimbotFOVGui")
+local fovCircle = getOrCreateCircle(fovScreenGui, "FOVCircle", fovRadius)
+
+local legitFovScreenGui = getOrCreateFOVGui("LegitAimFOVGui")
+local legitFovCircle = getOrCreateCircle(legitFovScreenGui, "LegitFOVCircle", legitFovRadius)
+
+-- Ensure FOV circles persist after character reset & settings persist
+local function persistFOVCircles()
+    fovScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+    legitFovScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+end
+
+Players.LocalPlayer.CharacterAdded:Connect(function()
+    persistFOVCircles()
+end)
+persistFOVCircles()
+
+-- ===== AIMBOT FUNCTIONS =====
+local function getClosestTarget(fov, useLegitFov)
     local closestDist = math.huge
     local closestChar = nil
 
     local mousePos = UserInputService:GetMouseLocation()
-    local adjustedPos = Vector2.new(mousePos.X, mousePos.Y - 36)
-    fovCircle.Position = UDim2.new(0, adjustedPos.X, 0, adjustedPos.Y)
+
+    -- FOV circle positioning
+    if useLegitFov then
+        legitFovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y - 40)
+    else
+        fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y - 40)
+    end
 
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= localPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
             if not teamCheckEnabled or (plr.Team ~= localPlayer.Team) then
                 local head = plr.Character.Head
                 local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
-
                 if onScreen then
                     local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mousePos.X, mousePos.Y)).Magnitude
-
-                    if dist < closestDist and dist <= fovRadius then
+                    if dist < closestDist and dist <= fov then
                         closestDist = dist
                         closestChar = plr.Character
                     end
@@ -114,53 +159,135 @@ local function getClosestTarget()
     return closestChar
 end
 
--- UI Callbacks
+-- ===== AIMBOT UI =====
 Tab:CreateToggle({
    Name = "Aimbot",
    CurrentValue = false,
-   Flag = "Toggle1",
+   Flag = "ToggleAimbot",
    Callback = function(Value)
       toggleOn = Value
       aiming = false
-      fovCircle.Visible = Value
    end,
 })
 
 Tab:CreateSlider({
-   Name = "Aimbot FOV",
+   Name = "Aimbot FOV Size",
    Range = {10, 300},
    Increment = 10,
    Suffix = "px",
    CurrentValue = fovRadius,
-   Flag = "Slider1",
+   Flag = "SliderFOV",
    Callback = function(Value)
       fovRadius = Value
       fovCircle.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
    end,
 })
+Tab:CreateToggle({
+    Name = "Aimbot FOV",
+    CurrentValue = true,
+    Flag = "ShowAimbotFOV",
+    Callback = function(Value)
+        fovCircleVisible = Value
+    end,
+})
 
+local Section = Tab:CreateSection("Secret")
+Tab:CreateToggle({
+   Name = "AI Aimbot",
+   CurrentValue = false,
+   Flag = "LegitAimbotToggle",
+   Callback = function(Value)
+      legitAimbotEnabled = Value
+   end,
+})
+
+Tab:CreateSlider({
+   Name = "AI Aimbot Accuracy",
+   Range = {0.05, 0.5},
+   Increment = 0.01,
+   Suffix = "",
+   CurrentValue = aimSmoothness,
+   Flag = "LegitAimSmoothSlider",
+   Callback = function(Value)
+      aimSmoothness = Value
+   end,
+})
+Tab:CreateSlider({
+    Name = "AI Aimbot FOV Size",
+    Range = {10, 300},
+    Increment = 10,
+    Suffix = "px",
+    CurrentValue = legitFovRadius,
+    Flag = "LegitAimFOVSlider",
+    Callback = function(Value)
+        legitFovRadius = Value
+        legitFovCircle.Size = UDim2.new(0, legitFovRadius * 2, 0, legitFovRadius * 2)
+    end,
+})
+Tab:CreateToggle({
+    Name = "AI Aimbot FOV",
+    CurrentValue = true,
+    Flag = "ShowLegitFOV",
+    Callback = function(Value)
+        legitFovCircleVisible = Value
+    end,
+})
+
+-- ===== AIMBOT INPUT =====
 UserInputService.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 and toggleOn then
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
         aiming = true
     end
 end)
-
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         aiming = false
     end
 end)
 
+-- Update FOV Circles position and visibility
 RunService.RenderStepped:Connect(function()
-    if toggleOn then
-        local mousePos = UserInputService:GetMouseLocation()
-        fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+    local mousePos = UserInputService:GetMouseLocation()
+    -- Classic aimbot FOV: always visible when aimbot is enabled & toggle is on
+    if toggleOn and fovCircleVisible then
+        fovCircle.Visible = true
+        fovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y - 40)
+    else
+        fovCircle.Visible = false
+    end
+    -- Legit FOV: always visible when legit mode and toggle are on
+    if legitAimbotEnabled and legitFovCircleVisible then
+        legitFovCircle.Visible = true
+        legitFovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y - 40)
+    else
+        legitFovCircle.Visible = false
     end
 end)
 
+-- LEGIT AIMBOT: Smooth camera follow with delay and its own FOV
+task.spawn(function()
+    while true do
+        if aiming and legitAimbotEnabled then
+            local targetChar = getClosestTarget(legitFovRadius, true)
+            if targetChar and targetChar:FindFirstChild("Head") then
+                local headPos = targetChar.Head.Position
+                local camPos = camera.CFrame.Position
+                local direction = (headPos - camPos).Unit
+                local currentLook = camera.CFrame.LookVector
+                local newLook = currentLook:Lerp(direction, aimSmoothness)
+                camera.CFrame = CFrame.new(camPos, camPos + newLook)
+            end
+            task.wait(aimDelay)
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+-- Classic aimbot: Snappy aim (if legitAimbot disabled)
 RunService.RenderStepped:Connect(function()
-    if aiming then
-        local target = getClosestTarget()
+    if aiming and toggleOn and not legitAimbotEnabled then
+        local target = getClosestTarget(fovRadius, false)
         if target and target:FindFirstChild("Head") then
             local headPos = target.Head.Position
             local direction = (headPos - camera.CFrame.Position).Unit
@@ -169,7 +296,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ESP Functions
+-- ===== CHAMS (Highlight) FUNCTIONS =====
 local function updateESP()
     if ESPEnabled then
         for _, player in ipairs(Players:GetPlayers()) do
@@ -199,28 +326,46 @@ local function updateESP()
     end
 end
 
--- ESP UI
-Tab:CreateToggle({
+local Tab2 = Window:CreateTab("ESP & Chams", "scan-eye")
+Tab2:CreateToggle({
    Name = "Chams",
    CurrentValue = false,
-   Flag = "ToggleESP",
+   Flag = "ToggleChams",
    Callback = function(Value)
        ESPEnabled = Value
        updateESP()
    end,
 })
 
-Tab:CreateColorPicker({
+Tab2:CreateColorPicker({
     Name = "Chams Color",
     Color = Color3.fromRGB(255, 0, 0),
-    Flag = "ESPColorPicker",
+    Flag = "ChamsColorPicker",
     Callback = function(Value)
         ESPColor = Value
         updateESP()
     end
 })
 
-Tab:CreateToggle({
+
+Tab2:CreateToggle({
+    Name = "Box ESP",
+    CurrentValue = false,
+    Callback = function(value)
+        BoxESPEnabled = value
+        if not value then
+            for _, esp in pairs(BoxESPObjects) do
+                esp.Box.Visible = false
+                esp.HealthBar.Visible = false
+                esp.NameTag.Visible = false
+                esp.DistanceTag.Visible = false
+                esp.Tracer.Visible = false
+            end
+        end
+    end
+})
+
+Tab2:CreateToggle({
     Name = "Team Check",
     CurrentValue = false,
     Flag = "TeamCheckToggle",
@@ -230,25 +375,182 @@ Tab:CreateToggle({
     end,
 })
 
--- ESP on player joins
+-- ===== [CHAMS FIX FOR NEW PLAYERS AND RESETS] =====
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= localPlayer then
+        player.CharacterAdded:Connect(function()
+            updateESP()
+            persistFOVCircles()
+        end)
+        player.CharacterRemoving:Connect(function()
+            if Highlights[player] then
+                Highlights[player]:Destroy()
+                Highlights[player] = nil
+            end
+        end)
+    end
+end
+
 Players.PlayerAdded:Connect(function(player)
-    player.CharacterAdded:Connect(function(character)
-        if ESPEnabled and player ~= localPlayer and (not teamCheckEnabled or player.Team ~= localPlayer.Team) then
-            local highlight = Instance.new("Highlight")
-            highlight.Parent = character
-            highlight.FillColor = ESPColor
-            Highlights[player] = highlight
+    player.CharacterAdded:Connect(function()
+        updateESP()
+        persistFOVCircles()
+    end)
+    player.CharacterRemoving:Connect(function()
+        if Highlights[player] then
+            Highlights[player]:Destroy()
+            Highlights[player] = nil
         end
     end)
 end)
 
-for _, player in ipairs(Players:GetPlayers()) do
-    player.CharacterAdded:Connect(function(character)
-        if ESPEnabled and player ~= localPlayer and (not teamCheckEnabled or player.Team ~= localPlayer.Team) then
-            local highlight = Instance.new("Highlight")
-            highlight.Parent = character
-            highlight.FillColor = ESPColor
-            Highlights[player] = highlight
-        end
-    end)
+-- ===== BOX ESP / TRACERS (unchanged) =====
+local lplr = Players.LocalPlayer
+local CurrentCamera = camera
+local worldToViewportPoint = CurrentCamera.WorldToViewportPoint
+
+local HeadOff = Vector3.new(0, 0.5, 0)
+local LegOff = Vector3.new(0, 3, 0)
+
+local BoxESPObjects = {}
+
+local function createBoxEsp(player)
+    if player == lplr then return end
+
+    local Box = Drawing.new("Square")
+    Box.Visible = false
+    Box.Color = player.TeamColor.Color
+    Box.Thickness = 1
+    Box.Transparency = 1
+    Box.Filled = false
+
+    local HealthBar = Drawing.new("Line")
+    HealthBar.Visible = false
+    HealthBar.Color = Color3.new(0, 1, 0)
+    HealthBar.Thickness = 2
+
+    local NameTag = Drawing.new("Text")
+    NameTag.Visible = false
+    NameTag.Color = Color3.new(1, 1, 1)
+    NameTag.Size = 9
+    NameTag.Center = true
+    NameTag.Outline = true
+    NameTag.OutlineColor = Color3.new(0, 0, 0)
+
+    local DistanceTag = Drawing.new("Text")
+    DistanceTag.Visible = false
+    DistanceTag.Color = Color3.new(1, 1, 1)
+    DistanceTag.Size = 9
+    DistanceTag.Center = true
+    DistanceTag.Outline = true
+    DistanceTag.OutlineColor = Color3.new(0, 0, 0)
+
+    local Tracer = Drawing.new("Line")
+    Tracer.Visible = false
+    Tracer.Color = player.TeamColor.Color
+    Tracer.Thickness = 2
+
+    BoxESPObjects[player] = {
+        Box = Box,
+        HealthBar = HealthBar,
+        NameTag = NameTag,
+        DistanceTag = DistanceTag,
+        Tracer = Tracer,
+    }
 end
+
+local function removeBoxEsp(player)
+    local esp = BoxESPObjects[player]
+    if esp then
+        esp.Box:Remove()
+        esp.HealthBar:Remove()
+        esp.NameTag:Remove()
+        esp.DistanceTag:Remove()
+        esp.Tracer:Remove()
+        BoxESPObjects[player] = nil
+    end
+end
+
+for _, player in pairs(Players:GetPlayers()) do
+    createBoxEsp(player)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    createBoxEsp(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    removeBoxEsp(player)
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not BoxESPEnabled then
+        for _, esp in pairs(BoxESPObjects) do
+            esp.Box.Visible = false
+            esp.HealthBar.Visible = false
+            esp.NameTag.Visible = false
+            esp.DistanceTag.Visible = false
+            esp.Tracer.Visible = false
+        end
+        return
+    end
+
+    for player, esp in pairs(BoxESPObjects) do
+        local character = player.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        local head = character and character:FindFirstChild("Head")
+
+        if character and humanoid and humanoid.Health > 0 and rootPart and head then
+            local Vector, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+
+            local RootPosition, RootVisibility = worldToViewportPoint(CurrentCamera, rootPart.Position)
+            local HeadPosition = worldToViewportPoint(CurrentCamera, head.Position + HeadOff)
+            local LegPosition = worldToViewportPoint(CurrentCamera, rootPart.Position - LegOff)
+
+            local boxHeight = HeadPosition.Y - LegPosition.Y
+            local boxWidth = (1000 / RootPosition.Z) * 5
+
+            esp.Box.Size = Vector2.new(boxWidth, boxHeight)
+            esp.Box.Position = Vector2.new(RootPosition.X - boxWidth / 2, RootPosition.Y - boxHeight / 2)
+            esp.Box.Color = player.TeamColor.Color
+            esp.Box.Visible = onScreen
+
+            local healthRatio = humanoid.Health / humanoid.MaxHealth
+            esp.HealthBar.From = Vector2.new(esp.Box.Position.X + esp.Box.Size.X + 5, esp.Box.Position.Y + esp.Box.Size.Y * (1 - healthRatio))
+            esp.HealthBar.To = Vector2.new(esp.Box.Position.X + esp.Box.Size.X + 5, esp.Box.Position.Y + esp.Box.Size.Y)
+            esp.HealthBar.Color = Color3.new(1 - healthRatio, healthRatio, 0)
+            esp.HealthBar.Visible = onScreen
+
+            esp.NameTag.Position = Vector2.new(esp.Box.Position.X + esp.Box.Size.X / 2, esp.Box.Position.Y - 20)
+            esp.NameTag.Text = player.Name
+            esp.NameTag.Visible = onScreen
+
+            if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (lplr.Character.HumanoidRootPart.Position - rootPart.Position).Magnitude
+                esp.DistanceTag.Position = Vector2.new(esp.Box.Position.X + esp.Box.Size.X / 2, esp.Box.Position.Y + esp.Box.Size.Y)
+                esp.DistanceTag.Text = math.floor(dist) .. "m"
+                esp.DistanceTag.Visible = onScreen
+            else
+                esp.DistanceTag.Visible = false
+            end
+
+            if lplr.Character and lplr.Character:FindFirstChild("Head") then
+                local lplrHeadViewport = camera:WorldToViewportPoint(lplr.Character.Head.Position)
+                esp.Tracer.From = Vector2.new(lplrHeadViewport.X, lplrHeadViewport.Y)
+                esp.Tracer.To = Vector2.new(RootPosition.X, RootPosition.Y)
+                esp.Tracer.Color = player.TeamColor.Color
+                esp.Tracer.Visible = false
+            else
+                esp.Tracer.Visible = false
+            end
+        else
+            esp.Box.Visible = false
+            esp.HealthBar.Visible = false
+            esp.NameTag.Visible = false
+            esp.DistanceTag.Visible = false
+            esp.Tracer.Visible = false
+        end
+    end
+end)
+
